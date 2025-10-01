@@ -27,8 +27,9 @@
 #include "ns3/channel.h"
 #include "ns3/data-rate.h"
 #include "ns3/mobility-model.h"
-#include "ns3/sgi-hashmap.h"
+// #include "ns3/sgi-hashmap.h"
 #include "ns3/mac48-address.h"
+#include <unordered_map>
 
 namespace ns3 {
 
@@ -78,8 +79,8 @@ protected:
                                               //   for each packet which is sent over this channel.
 
   // Mac address to net device
-  typedef sgi::hash_map<Mac48Address, Ptr<GSLNetDevice>, Mac48AddressHash> MacToNetDevice;
-  typedef sgi::hash_map<Mac48Address, Ptr<GSLNetDevice>, Mac48AddressHash>::iterator MacToNetDeviceI;
+  typedef std::unordered_map<Mac48Address, Ptr<GSLNetDevice>, Mac48AddressHash> MacToNetDevice;
+  typedef std::unordered_map<Mac48Address, Ptr<GSLNetDevice>, Mac48AddressHash>::iterator MacToNetDeviceI;
   MacToNetDevice m_link;
   std::vector<Ptr<GSLNetDevice>> m_net_devices;
 
