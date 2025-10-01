@@ -20,6 +20,9 @@
  */
 
 #include "topology-satellite-network.h"
+#include "ns3/traffic-control-helper.h"
+#include "ns3/traffic-control-layer.h"
+#include "ns3/tbf-queue-disc.h"
 
 namespace ns3 {
 
@@ -310,15 +313,23 @@ namespace ns3 {
         // Link helper
         GSLHelper gsl_helper;
         std::string max_queue_size_str = format_string("%" PRId64 "p", m_gsl_max_queue_size_pkts);
-        gsl_helper.SetQueue("ns3::DropTailQueue<Packet>", "MaxSize", QueueSizeValue(QueueSize(max_queue_size_str)));
+        // gsl_helper.SetQueue("ns3::DropTailQueue<Packet>", "MaxSize", QueueSizeValue(QueueSize(max_queue_size_str)));
         gsl_helper.SetDeviceAttribute ("DataRate", DataRateValue (DataRate (std::to_string(m_gsl_data_rate_megabit_per_s) + "Mbps")));
         std::cout << "    >> GSL data rate........ " << m_gsl_data_rate_megabit_per_s << " Mbit/s" << std::endl;
         std::cout << "    >> GSL max queue size... " << m_gsl_max_queue_size_pkts << " packets" << std::endl;
-
+    
+        uint packet_size = 1380; // default size in hypatia
+        uint packets = 60;
         // Traffic control helper
         TrafficControlHelper tch_gsl;
-        tch_gsl.SetRootQueueDisc("ns3::FifoQueueDisc", "MaxSize", QueueSizeValue(QueueSize("1p")));  // Will be removed later any case
-
+        std::cout << "GSL queueing discipline... TbfQueueDisc with Token Rate 280Mbps, Bucket Size:" << packets * packet_size << " bytes." << std::endl;
+        tch_gsl.SetRootQueueDisc("ns3::TbfQueueDisc",
+                                "Burst", UintegerValue(packets * packet_size), // Bucket Size. default: 60 pkts. Our experiment also test in 120 pkts and 128000 Bytes scenarios.
+                                "Mtu", UintegerValue(0),                  // This value is a parameter of secondary bucket, we do not use this bucket, so set it to zero.
+                                "Rate", DataRateValue(DataRate("280Mbps")),  // Token Rate: 280Mbps
+                                "PeakRate", DataRateValue(DataRate("0Mbps")), // 0 means disabled secondary bucket
+                                "MaxSize", StringValue("1p")); // Max size of a buffering queue. Since there is no buffering in normal Token Bucket Meter, we set this value very small.)
+        // Parameters explanation: https://www.nsnam.org/docs/release/3.35/models/html/tbf.html 
         // Check that the file exists
         std::string filename = m_satellite_network_dir + "/gsl_interfaces_info.txt";
         if (!file_exists(filename)) {
@@ -357,8 +368,7 @@ namespace ns3 {
 
         // Install queueing disciplines
         tch_gsl.Install(devices);
-        std::cout << "    >> Finished installing traffic control layer qdisc which will be removed later" << std::endl;
-
+        std::cout << "    >> Finished installing traffic control (Token Bucket Filter) layer qdisc" << std::endl;
         // Assign IP addresses
         //
         // This is slow because of an inefficient implementation, if you want to speed it up, you can need to edit:
@@ -395,13 +405,16 @@ namespace ns3 {
         }
         std::cout << "    >> Finished assigning IPs" << std::endl;
 
-        // Remove the traffic control layer (must be done here, else the Ipv4 helper will assign a default one)
+        // delete the tbf queue from satellite side 
+        std::cout << "    >> Removing TBF from satellite side." << std::endl;
         TrafficControlHelper tch_uninstaller;
-        std::cout << "    >> Removing traffic control layers (qdiscs)..." << std::endl;
-        for (uint32_t i = 0; i < devices.GetN(); i++) {
-            tch_uninstaller.Uninstall(devices.Get(i));
+        for(uint32_t i = 0; i < devices.GetN(); i++){
+            Ptr<Node> n = devices.Get(i) -> GetNode();
+            if(IsSatelliteId(n->GetId())){
+                tch_uninstaller.Uninstall(devices.Get(i));
+            }
         }
-        std::cout << "    >> Finished removing GSL queueing disciplines" << std::endl;
+        std::cout << "    >> Finished uninstall tbf qdisc from satellite side." << std::endl;
 
         // Check that all interfaces were created
         NS_ABORT_MSG_IF(total_num_gsl_ifs != devices.GetN(), "Not the expected amount of interfaces has been created.");
